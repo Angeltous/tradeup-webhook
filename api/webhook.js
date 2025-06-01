@@ -1,5 +1,6 @@
 import { buffer } from 'micro';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -39,6 +40,8 @@ export default async function handler(req, res) {
       ? new Date('2099-12-31').toISOString()
       : new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
 
+    const id = crypto.randomUUID(); // Genera un UUID como id
+
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/Suscripciones%20TradeUp`, {
         method: 'POST',
@@ -48,6 +51,7 @@ export default async function handler(req, res) {
           Authorization: `Bearer ${SUPABASE_KEY}`,
         },
         body: JSON.stringify({
+          id, // Añadimos el ID generado
           email,
           subscription_type: subscriptionType,
           active: true,
