@@ -1,7 +1,7 @@
 import { buffer } from 'micro';
 import Stripe from 'stripe';
-import crypto from 'crypto';
 
+// Stripe y Supabase config
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -25,23 +25,22 @@ export default async function handler(req, res) {
   try {
     event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook Error:', err.message);
+    console.error('❌ Error validando firma Stripe:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const email = session.customer_details?.email || 'sin-email@error.com';
-    const subscriptionType = session.metadata?.plan || 'unknown';
-    const isLifetime = subscriptionType === 'lifetime';
+    console.log("✅ SESIÓN COMPLETADA:", session);
 
+    const email = session.customer_details?.email || 'sin_email@error.com';
+    const subscriptionType = session.metadata?.plan || 'mensual';
     const now = new Date().toISOString();
-    const endDate = isLifetime 
-      ? new Date('2099-12-31').toISOString()
+    const endDate = subscriptionType === 'lifetime'
+      ? null
       : new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
 
-    const id = crypto.randomUUID(); // Genera un UUID como id
-
+    // Inserción en Supabase
     try {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/Suscripciones%20TradeUp`, {
         method: 'POST',
@@ -49,30 +48,29 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           apiKey: SUPABASE_KEY,
           Authorization: `Bearer ${SUPABASE_KEY}`,
+          Prefer: 'return=representation',
         },
         body: JSON.stringify({
-          id, // Añadimos el ID generado
           email,
           subscription_type: subscriptionType,
           active: true,
           start_date: now,
           end_date: endDate,
-          stripe_customer_id: session.customer || 'no-id',
+          stripe_customer_id: session.customer || 'sin_id',
           created_at: now,
         }),
       });
 
-      const data = await response.json();
+      const result = await response.json();
+      console.log("🟢 Supabase insert result:", result);
 
       if (!response.ok) {
-        console.error('Error al insertar en Supabase:', data);
-        return res.status(500).json({ error: 'Error al insertar en Supabase', details: data });
+        console.error("❌ Supabase error:", result);
+        return res.status(500).json({ error: 'Error al insertar en Supabase', details: result });
       }
-
-      console.log('Insertado correctamente en Supabase:', data);
-    } catch (error) {
-      console.error('Error en la llamada a Supabase:', error);
-      return res.status(500).json({ error: 'Error en la llamada a Supabase', details: error.message });
+    } catch (err) {
+      console.error("❌ Error al conectar con Supabase:", err);
+      return res.status(500).json({ error: 'Fallo de red o Supabase inalcanzable' });
     }
   }
 
